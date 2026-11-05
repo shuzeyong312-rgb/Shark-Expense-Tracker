@@ -10,6 +10,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.*
 import com.example.personalledger.data.*
@@ -62,31 +64,55 @@ fun MenuRow(text: String, onClick: () -> Unit) {
 
 @Composable
 fun AgentScreen() {
+    val secondary = Color(0xFF686157)
     Column(Modifier.fillMaxSize().background(pageGray)) {
-        Row(Modifier.fillMaxWidth().background(yellow).padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(42.dp).background(Color(0xFFFFF6CE), RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) { CatIcon("agent_mark", true, Modifier.size(24.dp)) }
-            Column(Modifier.weight(1f).padding(start = 12.dp)) { Text("账伴", fontSize = 21.sp, fontWeight = FontWeight.Bold); Text("陪你看懂每一笔收支", fontSize = 11.sp) }
-            Text("AI 助手 · 概念预览", Modifier.background(Color(0xFFFFF6CE), RoundedCornerShape(20.dp)).padding(horizontal = 10.dp, vertical = 6.dp), fontSize = 10.sp, color = Color.Gray)
-        }
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp)) {
-            Text("今天", Modifier.align(Alignment.CenterHorizontally), color = Color.Gray, fontSize = 12.sp)
-            Row(Modifier.padding(top = 18.dp)) {
-                Box(Modifier.size(34.dp).background(Color(0xFFFFEAA4), RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) { CatIcon("agent_avatar", true, Modifier.size(20.dp)) }
-                Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                    Text("账伴", color = Color.Gray, fontSize = 11.sp)
-                    Text("你好，我是账伴。\n这里会成为你的账单分析空间。未来，你可以像聊天一样提问，一起梳理收支、观察消费变化，让每一笔账都更容易看懂。", Modifier.padding(top = 6.dp).background(Color.White, RoundedCornerShape(14.dp)).padding(14.dp), lineHeight = 22.sp, fontSize = 14.sp)
-                    Text("以后可以这样和我聊", Modifier.padding(top = 24.dp), fontWeight = FontWeight.Bold)
-                    val suggestions = listOf("⌁" to "这个月的钱主要花在哪里？", "↗" to "最近消费有什么变化？", "◷" to "帮我看看每周支出趋势", "▤" to "哪些标签的累计消费较高？")
-                    suggestions.chunked(2).forEach { row -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { row.forEach { (symbol, label) -> Row(Modifier.weight(1f).padding(top = 8.dp).background(Color.White, RoundedCornerShape(10.dp)).heightIn(min = 64.dp).padding(10.dp), verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(30.dp).background(Color(0xFFFFF6CE), RoundedCornerShape(9.dp)), contentAlignment = Alignment.Center) { Text(symbol, fontSize = 15.sp) }; Text(label, Modifier.padding(start = 8.dp), fontSize = 12.sp) } } } }
-                    Text("以上为未来对话场景示意，当前仅展示界面，不会读取或分析账单。", Modifier.padding(top = 18.dp), color = Color.Gray, fontSize = 10.sp)
+        BoxWithConstraints(Modifier.fillMaxWidth().background(yellow)) {
+            val compact = maxWidth < 360.dp || androidx.compose.ui.platform.LocalConfiguration.current.fontScale > 1.2f
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(42.dp).background(Color(0xFFFFF6CE), RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) { CatIcon("agent_mark", true, Modifier.size(24.dp)) }
+                    Column(Modifier.weight(1f).padding(start = 12.dp, end = 8.dp)) {
+                        Text("账伴", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = ink)
+                        Text("陪你看懂每一笔收支", fontSize = 12.sp, color = Color(0xFF66531C), lineHeight = 17.sp)
+                    }
+                    if (!compact) Text("AI 助手 · 概念预览", Modifier.background(Color(0xFFFFF6CE), RoundedCornerShape(20.dp)).padding(horizontal = 10.dp, vertical = 6.dp), fontSize = 11.sp, color = Color(0xFF66531C), lineHeight = 16.sp)
                 }
+                if (compact) Text("AI 助手 · 概念预览", Modifier.padding(top = 8.dp).background(Color(0xFFFFF6CE), RoundedCornerShape(20.dp)).padding(horizontal = 10.dp, vertical = 6.dp), fontSize = 11.sp, color = Color(0xFF66531C), lineHeight = 16.sp)
             }
         }
-        Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = {}, enabled = false) { Text("＋", fontSize = 22.sp) }
-            OutlinedTextField(value = "", onValueChange = {}, enabled = false, placeholder = { Text("和账伴聊聊你的账单…") }, modifier = Modifier.weight(1f), singleLine = true)
-            TextButton(onClick = {}, enabled = false) { Text("↑", fontSize = 22.sp) }
+        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 16.dp)) {
+            Text("今天", Modifier.align(Alignment.CenterHorizontally), color = secondary, fontSize = 12.sp)
+            Row(Modifier.padding(top = 18.dp), verticalAlignment = Alignment.Top) {
+                Box(Modifier.size(34.dp).background(Color(0xFFFFEAA4), RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) { CatIcon("agent_avatar", true, Modifier.size(20.dp)) }
+                Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                    Text("账伴", color = secondary, fontSize = 12.sp)
+                    Column(Modifier.padding(top = 6.dp).background(Color.White, RoundedCornerShape(4.dp, 14.dp, 14.dp, 14.dp)).padding(14.dp)) {
+                        Text("你好，我是账伴。", fontSize = 14.sp, lineHeight = 22.sp, color = ink, fontWeight = FontWeight.SemiBold)
+                        Text("这里会成为你的账单分析空间。未来，你可以像聊天一样提问，一起梳理收支、观察消费变化，让每一笔账都更容易看懂。", fontSize = 14.sp, lineHeight = 22.sp, color = Color(0xFF45413A))
+                    }
+                }
+            }
+            Text("以后可以这样和我聊", Modifier.padding(top = 24.dp, bottom = 10.dp), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = ink)
+            val suggestions = listOf("wallet" to "这个月的钱主要花在哪里？", "chart" to "最近消费有什么变化？", "nav_chart" to "帮我看看每周支出趋势", "book" to "哪些标签的累计消费较高？")
+            suggestions.chunked(2).forEach { row ->
+                Row(Modifier.fillMaxWidth().padding(bottom = 8.dp).height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { (icon, label) ->
+                        Row(Modifier.weight(1f).fillMaxHeight().heightIn(min = 72.dp).background(Color.White, RoundedCornerShape(12.dp)).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(30.dp).background(Color(0xFFFFF6CE), RoundedCornerShape(9.dp)), contentAlignment = Alignment.Center) { CatIcon(icon, true, Modifier.size(18.dp), Color(0xFF80651E)) }
+                            Text(label, Modifier.padding(start = 8.dp), fontSize = 12.sp, lineHeight = 18.sp, color = Color(0xFF45413A))
+                        }
+                    }
+                }
+            }
+            Text("以上为未来对话场景示意，当前仅展示界面，不会读取或分析账单。", Modifier.padding(top = 8.dp, bottom = 4.dp), color = secondary, fontSize = 12.sp, lineHeight = 18.sp)
         }
-        Box(Modifier.fillMaxWidth().background(Color.White), contentAlignment = Alignment.Center) { Text("智能对话功能将在后续版本接入", Modifier.padding(8.dp), color = Color.Gray, fontSize = 11.sp) }
+        Column(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 8.dp, vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = {}, enabled = false, modifier = Modifier.semantics { contentDescription = "附件功能预留" }) { Text("＋", fontSize = 22.sp) }
+                OutlinedTextField(value = "", onValueChange = {}, enabled = false, placeholder = { Text("和账伴聊聊你的账单…", fontSize = 14.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }, modifier = Modifier.weight(1f), singleLine = true, shape = RoundedCornerShape(24.dp), colors = OutlinedTextFieldDefaults.colors(disabledContainerColor = Color(0xFFF5F4F1), disabledBorderColor = Color(0xFFE5E2DB), disabledPlaceholderColor = Color(0xFF77736C)))
+                IconButton(onClick = {}, enabled = false, modifier = Modifier.semantics { contentDescription = "发送功能预留" }) { Text("↑", fontSize = 22.sp) }
+            }
+            Text("智能对话功能将在后续版本接入", Modifier.padding(top = 6.dp), color = secondary, fontSize = 12.sp, lineHeight = 17.sp)
+        }
     }
 }
