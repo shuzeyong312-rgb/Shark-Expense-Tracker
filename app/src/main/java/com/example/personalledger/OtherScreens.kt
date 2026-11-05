@@ -106,13 +106,20 @@ fun AgentScreen() {
             }
             Text("以上为未来对话场景示意，当前仅展示界面，不会读取或分析账单。", Modifier.padding(top = 8.dp, bottom = 4.dp), color = secondary, fontSize = 12.sp, lineHeight = 18.sp)
         }
-        Column(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 8.dp, vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = {}, enabled = false, modifier = Modifier.semantics { contentDescription = "附件功能预留" }) { Text("＋", fontSize = 22.sp) }
-                OutlinedTextField(value = "", onValueChange = {}, enabled = false, placeholder = { Text("和账伴聊聊你的账单…", fontSize = 14.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }, modifier = Modifier.weight(1f), singleLine = true, shape = RoundedCornerShape(24.dp), colors = OutlinedTextFieldDefaults.colors(disabledContainerColor = Color(0xFFF5F4F1), disabledBorderColor = Color(0xFFE5E2DB), disabledPlaceholderColor = Color(0xFF77736C)))
-                IconButton(onClick = {}, enabled = false, modifier = Modifier.semantics { contentDescription = "发送功能预留" }) { Text("↑", fontSize = 22.sp) }
+        Row(
+            Modifier.fillMaxWidth().background(pageGray).padding(horizontal = 16.dp, vertical = 10.dp)
+                .background(Color.White, RoundedCornerShape(28.dp)).padding(horizontal = 4.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = {}, enabled = false, modifier = Modifier.semantics { contentDescription = "附件功能预留" }) { Text("＋", fontSize = 22.sp, color = Color(0xFF77736C)) }
+            androidx.compose.foundation.text.BasicTextField(
+                value = "", onValueChange = {}, enabled = false, singleLine = true,
+                modifier = Modifier.weight(1f),
+                decorationBox = { inner -> Box { inner(); Text("和账伴聊聊你的账单…", fontSize = 14.sp, color = Color(0xFF77736C), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) } }
+            )
+            IconButton(onClick = {}, enabled = false, modifier = Modifier.semantics { contentDescription = "发送功能预留" }) {
+                Box(Modifier.size(34.dp).background(Color(0xFFEAE9E6), CircleShape), contentAlignment = Alignment.Center) { Text("↑", fontSize = 20.sp, color = Color(0xFF999792)) }
             }
-            Text("智能对话功能将在后续版本接入", Modifier.padding(top = 6.dp), color = secondary, fontSize = 12.sp, lineHeight = 17.sp)
         }
     }
 }

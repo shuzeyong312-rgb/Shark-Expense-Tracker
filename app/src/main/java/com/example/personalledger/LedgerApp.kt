@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.*
@@ -125,12 +126,18 @@ fun HomeScreen(model: LedgerViewModel, month: YearMonth, categories: List<Catego
     val threshold = with(density) { 72.dp.toPx() }
     val nested = remember(listState, month, threshold) { object : NestedScrollConnection {
         override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-            if (available.y < 0 && !listState.canScrollForward) pull = (pull - available.y).coerceAtMost(threshold * 2)
-            if (available.y > 0) pull = (pull - available.y).coerceAtLeast(0f)
+            if (available.y < 0) {
+                if (pull < 0) pull = (pull - available.y).coerceAtMost(0f)
+                else if (!listState.canScrollForward) pull = (pull - available.y).coerceAtMost(threshold * 2)
+            } else if (available.y > 0) {
+                if (pull > 0) pull = (pull - available.y).coerceAtLeast(0f)
+                else if (!listState.canScrollBackward && month < YearMonth.now()) pull = (pull - available.y).coerceAtLeast(-threshold * 2)
+            }
             return Offset.Zero
         }
         override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
             if (pull >= threshold) { setMonth(month.minusMonths(1)); listState.scrollToItem(0) }
+            else if (pull <= -threshold && month < YearMonth.now()) { setMonth(month.plusMonths(1)); listState.scrollToItem(0) }
             pull = 0f
             return Velocity.Zero
         }
@@ -148,13 +155,20 @@ fun HomeScreen(model: LedgerViewModel, month: YearMonth, categories: List<Catego
             listOf("收入" to "INCOME", "支出" to "EXPENSE").forEach { (label, type) -> Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) { Text(label, fontSize = 12.sp, color = Color(0xFF7B6A2D), fontFamily = FontFamily.Serif); Text(formatAmountMinor(monthItems.filter { it.type == type }.sumMinor()), fontSize = 20.sp) } }
         }
         }
-        LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth().nestedScroll(nested).testTag("billList")) {
+        Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().nestedScroll(nested).testTag("billList")) {
             if (monthItems.isEmpty()) item { Box(Modifier.fillMaxWidth().height(220.dp), contentAlignment = Alignment.Center) { Text("这个月还没有账单", color = Color.Gray) } }
             grouped.forEach { (date, items) ->
                 item { Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 18.dp, vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) { Text(LocalDate.parse(date).format(java.time.format.DateTimeFormatter.ofPattern("M月d日 EEEE", java.util.Locale.CHINA)), fontSize = 12.sp, color = Color.Gray); Text("支出 ${formatAmountMinor(items.filter { it.type == "EXPENSE" }.sumMinor())}  收入 ${formatAmountMinor(items.filter { it.type == "INCOME" }.sumMinor())}", fontSize = 11.sp, color = Color.Gray) } }
                 items(items, key = { it.id }) { transaction -> BillRow(transaction, categoryMap[transaction.categoryId], { edit(transaction) }, { model.run { model.repository.delete(transaction.id) } }) }
             }
-            item { Box(Modifier.fillMaxWidth().height(72.dp), contentAlignment = Alignment.Center) { Text(if (pull >= threshold) "松开查看上月数据" else "上拉查看上月数据", fontSize = 12.sp, color = Color.Gray) } }
+        }
+        if (pull < 0f) Box(Modifier.fillMaxWidth().height(72.dp).align(Alignment.TopCenter).offset { IntOffset(0, -(threshold + pull).coerceAtLeast(0f).toInt()) }, contentAlignment = Alignment.Center) {
+            Text(if (pull <= -threshold) "松开查看下月数据" else "下拉查看下月数据", fontSize = 12.sp, color = Color.Gray)
+        }
+        if (pull > 0f) Box(Modifier.fillMaxWidth().height(72.dp).align(Alignment.BottomCenter).offset { IntOffset(0, (threshold - pull).coerceAtLeast(0f).toInt()) }, contentAlignment = Alignment.Center) {
+            Text(if (pull >= threshold) "松开查看上月数据" else "上拉查看上月数据", fontSize = 12.sp, color = Color.Gray)
+        }
         }
     }
     if (picker) ModalBottomSheet(onDismissRequest = { picker = false }, containerColor = Color.White) {
