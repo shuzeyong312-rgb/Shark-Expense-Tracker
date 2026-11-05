@@ -39,16 +39,30 @@ class ChartUiTest {
         rule.onAllNodesWithText("午餐").onFirst().performClick()
         rule.runOnIdle { assertEquals("food", tag?.categoryId) }
     }
-    @Test fun oldPeriodRemainsSelectable() {
+    @Test fun oldPeriodsRestoreSelectionAndAllowReselection() {
         val context = ApplicationProvider.getApplicationContext<Application>()
         val db = Room.inMemoryDatabaseBuilder(context, LedgerDatabase::class.java).build()
         val model = LedgerViewModel(context, db)
-        val old = LocalDate.of(2018, 2, 1)
-        runBlocking { model.setChart("EXPENSE", PeriodKind.YEAR, old.toString()).join() }
-        rule.setContent { ChartScreen(model, java.time.YearMonth.now(), emptyList(), emptyList(), emptyList(), null, {}, { _, _ -> }, {}, {}) }
-        rule.waitUntil(10_000) { rule.onAllNodesWithText("2018年").fetchSemanticsNodes().isNotEmpty() }
-        rule.onNodeWithText("2018年").performClick()
-        rule.runOnIdle { assertEquals(old.toString(), model.chartAnchor.value) }
+        val now = LocalDate.now()
+        val old = LocalDate.of(2018, now.plusMonths(5).monthValue, 1)
+        var showChart by mutableStateOf(true)
+        rule.setContent { if (showChart) ChartScreen(model, java.time.YearMonth.now(), emptyList(), emptyList(), emptyList(), null, {}, { _, _ -> }, {}, {}) }
+        for (kind in PeriodKind.entries) {
+            rule.runOnIdle { showChart = false }
+            runBlocking { model.setChart("EXPENSE", kind, old.toString()).join() }
+            rule.runOnIdle { showChart = true }
+            val label = when (kind) {
+                PeriodKind.WEEK -> "${periodFor(old, kind).start.get(java.time.temporal.WeekFields.ISO.weekOfWeekBasedYear())}周"
+                PeriodKind.MONTH -> "${old.monthValue}月"
+                PeriodKind.YEAR -> "2018年"
+            }
+            rule.waitUntil(10_000) { model.period.value == kind && model.chartAnchor.value == old.toString() && rule.onAllNodesWithText(label).fetchSemanticsNodes().isNotEmpty() }
+            rule.onNodeWithText(label).assertIsSelected()
+            val newLabel = when (kind) { PeriodKind.WEEK -> "上周"; PeriodKind.MONTH -> "${LocalDate.now().monthValue}月"; PeriodKind.YEAR -> "${LocalDate.now().year}年" }
+            rule.onNodeWithText(newLabel).performClick()
+            rule.waitUntil(10_000) { model.chartAnchor.value != old.toString() }
+            rule.onNodeWithText(newLabel).assertIsSelected()
+        }
     }
 
     @Test fun trendTapChoosesNearestPoint() {
@@ -62,23 +76,35 @@ class ChartUiTest {
         val context = ApplicationProvider.getApplicationContext<Application>()
         val db = Room.inMemoryDatabaseBuilder(context, LedgerDatabase::class.java).build()
         val model = LedgerViewModel(context, db)
-        val category = defaultCategories().first { it.id == "food" }
-        val tag = NoteTag(1, category.id, "性能备注", "性能备注", "")
+        val categories = defaultCategories().filter { it.id == "food" || it.id == "daily" }
+        val food = categories.first { it.id == "food" }
+        val tags = List(1_000) { i -> NoteTag(i.toLong() + 1, if (i < 800) "food" else "daily", "备注%04d".format(i), "备注%04d".format(i), "") }
         val date = LocalDate.now().withDayOfMonth(1)
-        val records = List(10_000) { i -> LedgerTransaction(i.toLong() + 1, "EXPENSE", category.id, tag.id, "性能备注", 100, date.toString(), "", "") }
+        val records = List(10_000) { i ->
+            val tag = tags[i % tags.size]
+            LedgerTransaction(i.toLong() + 1, "EXPENSE", tag.categoryId, tag.id, tag.displayName, 100, date.toString(), "", "")
+        }
         runBlocking { model.setChart("EXPENSE", PeriodKind.MONTH, date.toString()).join() }
-        val before = android.os.Debug.getNativeHeapAllocatedSize()
-        val started = android.os.SystemClock.elapsedRealtime()
-        var showTag by mutableStateOf(false)
-        rule.setContent { if (showTag) TagScreen(model, tag, periodFor(date, PeriodKind.MONTH), listOf(category), records, {}, {}) else ChartScreen(model, java.time.YearMonth.from(date), records, listOf(category), listOf(tag), category, {}, { _, _ -> }, {}, {}) }
-        rule.waitUntil(30_000) { rule.onAllNodesWithText("10000 笔").fetchSemanticsNodes().isNotEmpty() }
-        rule.onNodeWithTag("chartDetails").performTouchInput { swipeUp() }
-        rule.waitForIdle()
-        android.util.Log.i("LedgerPerformance", "category ms=${android.os.SystemClock.elapsedRealtime()-started} nativeDelta=${android.os.Debug.getNativeHeapAllocatedSize()-before}")
-        rule.runOnIdle { showTag = true }
-        rule.onNodeWithText("10000").assertExists()
+        var selectedTag by mutableStateOf<NoteTag?>(null)
+        var editedId: Long? = null
+        rule.setContent {
+            val tag = selectedTag
+            if (tag != null) TagScreen(model, tag, periodFor(date, PeriodKind.MONTH), categories, records, {}, { selectedTag = null })
+            else ChartScreen(model, java.time.YearMonth.from(date), records, categories, tags, food, {}, { item, _ -> selectedTag = item }, { editedId = it.id }, {})
+        }
+        rule.waitUntil(30_000) { rule.onAllNodesWithText("8000 笔").fetchSemanticsNodes().isNotEmpty() }
+        val composed = rule.onAllNodesWithTag("noteRankingRow", useUnmergedTree = true).fetchSemanticsNodes().size
+        assertTrue("Expected only viewport rows, found $composed", composed in 1..30)
+        rule.onNodeWithTag("chartDetails").performScrollToKey("tag-800")
+        rule.onNodeWithText("备注0799").assertExists().performClick()
+        rule.onNodeWithText("10").assertExists()
+        rule.onNodeWithText("¥10.00").assertExists()
+        assertTrue(rule.onAllNodesWithText("备注0799").fetchSemanticsNodes().size >= 2)
         rule.onNodeWithTag("tagDetails").performTouchInput { swipeUp() }
-        rule.waitForIdle()
-        android.util.Log.i("LedgerPerformance", "tag totalMs=${android.os.SystemClock.elapsedRealtime()-started} nativeDelta=${android.os.Debug.getNativeHeapAllocatedSize()-before}")
+        rule.runOnIdle { selectedTag = null }
+        rule.onNodeWithTag("chartDetails").performScrollToKey(1L)
+        rule.onNodeWithText("备注0000").performClick()
+        rule.runOnIdle { assertEquals(1L, editedId) }
+        rule.onNodeWithTag("chartDetails").performTouchInput { swipeUp() }
     }
 }

@@ -17,6 +17,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.*
 import com.example.personalledger.data.*
@@ -27,6 +29,8 @@ import java.time.LocalDate
 import java.time.YearMonth
 
 private val donutColors = listOf(Color(0xFFF5CF3B), Color(0xFFEF8A76), Color(0xFF8B9CE8), Color(0xFF57B99A), Color(0xFFF0A54D), Color(0xFF61B7DC), Color(0xFFD47BB0), Color(0xFFA7B47A), Color(0xFF8D91A7), Color(0xFFD6A4E4), Color(0xFF77B5A7), Color(0xFFD2A26B))
+
+private data class TagRanking(val id: Long, val amount: BigInteger, val count: Int, val latest: String)
 
 @Composable
 fun ChartScreen(model: LedgerViewModel, month: YearMonth, all: List<LedgerTransaction>, categories: List<Category>, tags: List<NoteTag>, category: Category?, openCategory: (Category) -> Unit, openTag: (NoteTag, Period) -> Unit, edit: (LedgerTransaction) -> Unit, back: () -> Unit) {
@@ -47,10 +51,20 @@ fun ChartScreen(model: LedgerViewModel, month: YearMonth, all: List<LedgerTransa
     LaunchedEffect(kind, period.start, choices) {
         choicesScroll.scrollTo((choices.indexOfFirst { periodFor(it, kind).start == period.start } * choiceWidth).roundToInt())
     }
-    val filtered = all.filter { it.type == type && (category == null || it.categoryId == category.id) && it.occurredOn >= period.start.toString() && it.occurredOn <= period.end.toString() }
+    val filtered = remember(all, type, category, period) { all.filter { it.type == type && (category == null || it.categoryId == category.id) && it.occurredOn >= period.start.toString() && it.occurredOn <= period.end.toString() } }
     val series = remember(filtered, period) { periodSeries(filtered, period, type) }
     val total = series.sumBig()
     val categoryMap = remember(categories) { categories.associateBy { it.id } }
+    val tagsById = remember(tags) { tags.associateBy { it.id } }
+    val tagStats = remember(filtered, category) {
+        if (category == null) emptyList() else filtered.filter { it.noteTagId != null }.groupBy { it.noteTagId!! }.map { (id, records) ->
+            TagRanking(id, records.sumMinor(), records.size, records.maxOf { it.occurredOn })
+        }
+    }
+    val entries = remember(tagStats, sortRecent) { tagStats.sortedWith(if (sortRecent) compareByDescending<TagRanking> { it.latest }.thenByDescending { it.amount } else compareByDescending { it.amount }) }
+    val byAmount = remember(entries) { entries.sortedByDescending { it.amount } }
+    val taggedTotal = remember(tagStats) { tagStats.map { it.amount }.sumBig() }
+    val maximum = byAmount.firstOrNull()?.amount ?: BigInteger.ZERO
     Column(Modifier.fillMaxSize().background(Color.White)) {
         Column(Modifier.fillMaxWidth().background(yellow).height(76.dp)) {
             Box(Modifier.fillMaxWidth().height(47.dp), contentAlignment = Alignment.Center) {
@@ -64,7 +78,7 @@ fun ChartScreen(model: LedgerViewModel, month: YearMonth, all: List<LedgerTransa
             choices.forEach { choice ->
                 val p = periodFor(choice, kind)
                 val label = when (kind) { PeriodKind.WEEK -> if (periodFor(choice, kind).start == periodFor(defaultAnchor, kind).start) "上周" else "${p.start.get(java.time.temporal.WeekFields.ISO.weekOfWeekBasedYear())}周"; PeriodKind.MONTH -> "${choice.monthValue}月"; PeriodKind.YEAR -> "${choice.year}年" }
-                Column(Modifier.width(58.dp).clickable { model.setChart(savedType, kind, choice.toString()) }, horizontalAlignment = Alignment.CenterHorizontally) { Text(label, fontWeight = if (p.start == period.start) FontWeight.Bold else FontWeight.Normal, fontSize = 12.sp); Spacer(Modifier.padding(top = 5.dp).fillMaxWidth(.75f).height(2.dp).background(if (p.start == period.start) ink else Color.Transparent)) }
+                Column(Modifier.width(58.dp).semantics { selected = p.start == period.start }.clickable { model.setChart(savedType, kind, choice.toString()) }, horizontalAlignment = Alignment.CenterHorizontally) { Text(label, fontWeight = if (p.start == period.start) FontWeight.Bold else FontWeight.Normal, fontSize = 12.sp); Spacer(Modifier.padding(top = 5.dp).fillMaxWidth(.75f).height(2.dp).background(if (p.start == period.start) ink else Color.Transparent)) }
             }
         }
         LazyColumn(Modifier.weight(1f).padding(horizontal = 18.dp).testTag("chartDetails")) {
@@ -83,25 +97,25 @@ fun ChartScreen(model: LedgerViewModel, month: YearMonth, all: List<LedgerTransa
             } else {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(if (type == "EXPENSE") "支出排行榜" else "收入排行榜", fontWeight = FontWeight.Bold); Row { Text("按金额", Modifier.clickable { sortRecent = false }.padding(horizontal = 8.dp), color = if (!sortRecent) ink else Color.Gray); Text("按时间", Modifier.clickable { sortRecent = true }, color = if (sortRecent) ink else Color.Gray) } }
                 Text("一级分类：${category.name} · 二级标签：记账备注", Modifier.padding(top = 5.dp), fontSize = 11.sp, color = Color.Gray)
-                val tagged = filtered.filter { it.noteTagId != null }.groupBy { it.noteTagId!! }
-                val entries = tagged.entries.sortedWith(if (sortRecent) compareByDescending<Map.Entry<Long, List<LedgerTransaction>>> { entry -> entry.value.maxOf { it.occurredOn } }.thenByDescending { entry -> entry.value.sumMinor() } else compareByDescending { entry -> entry.value.sumMinor() })
-                val tagsById = tags.associateBy { it.id }
-                val taggedTotal = entries.map { it.value.sumMinor() }.sumBig()
-                val maximum = entries.maxOfOrNull { it.value.sumMinor() } ?: BigInteger.ZERO
                 if (entries.isEmpty()) Text("暂无备注", Modifier.padding(24.dp), color = Color.Gray)
-                entries.forEach { (id, records) -> tagsById[id]?.let { t -> Column { RankingRow(t.displayName, category.iconKey, records.sumMinor(), taggedTotal, maximum) { openTag(t, period) }; Text("${records.size} 笔 · 最近 ${records.maxOf { it.occurredOn }}", Modifier.padding(start = 50.dp), fontSize = 11.sp, color = Color.Gray) } } }
+            }
+          } }
+          if (category != null) {
+            items(entries, key = { "tag-${it.id}" }) { entry ->
+                tagsById[entry.id]?.let { t -> Column(Modifier.testTag("noteRankingRow")) { RankingRow(t.displayName, category.iconKey, entry.amount, taggedTotal, maximum) { openTag(t, period) }; Text("${entry.count} 笔 · 最近 ${entry.latest}", Modifier.padding(start = 50.dp), fontSize = 11.sp, color = Color.Gray) } }
+            }
+            item { Column {
                 Text("备注占比", Modifier.padding(top = 24.dp), fontWeight = FontWeight.Bold)
                 if (entries.isEmpty()) Text("暂无备注数据", Modifier.padding(vertical = 18.dp), color = Color.Gray)
                 else Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    val byAmount = entries.sortedByDescending { it.value.sumMinor() }
-                    Box(contentAlignment = Alignment.Center) { Donut(byAmount.map { it.value.sumMinor() }); Column(horizontalAlignment = Alignment.CenterHorizontally) { Text("备注总额", fontSize = 11.sp, color = Color.Gray); Text(formatAmountMinor(taggedTotal), fontSize = 14.sp) } }
-                    Column(Modifier.weight(1f)) { byAmount.take(6).forEachIndexed { index, (id, records) -> tagsById[id]?.let { t -> Row(Modifier.fillMaxWidth().clickable { openTag(t, period) }.padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(8.dp).background(donutColors[index % donutColors.size])); Text(" ${t.displayName}  ${formatPercent(records.sumMinor(), taggedTotal)}%  ${formatAmountMinor(records.sumMinor())}", fontSize = 12.sp) } } } }
+                    Box(contentAlignment = Alignment.Center) { Donut(byAmount.map { it.amount }); Column(horizontalAlignment = Alignment.CenterHorizontally) { Text("备注总额", fontSize = 11.sp, color = Color.Gray); Text(formatAmountMinor(taggedTotal), fontSize = 14.sp) } }
+                    Column(Modifier.weight(1f)) { byAmount.take(6).forEachIndexed { index, entry -> tagsById[entry.id]?.let { t -> Row(Modifier.fillMaxWidth().clickable { openTag(t, period) }.padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(8.dp).background(donutColors[index % donutColors.size])); Text(" ${t.displayName}  ${formatPercent(entry.amount, taggedTotal)}%  ${formatAmountMinor(entry.amount)}", fontSize = 12.sp) } } } }
                 }
                 Text("全部账单", Modifier.padding(top = 24.dp), fontWeight = FontWeight.Bold)
                 if (filtered.isEmpty()) Text("本周期暂无该分类账单", Modifier.padding(24.dp), color = Color.Gray)
-            }
-          } }
-          if (category != null) items(filtered, key = { it.id }) { row -> BillRow(row, category, { edit(row) }, { model.run { model.repository.delete(row.id) } }) }
+            } }
+            items(filtered, key = { it.id }) { row -> BillRow(row, category, { edit(row) }, { model.run { model.repository.delete(row.id) } }) }
+          }
         }
     }
 }
