@@ -3,6 +3,9 @@ package com.example.personalledger
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import kotlin.math.roundToInt
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -12,6 +15,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.*
 import com.example.personalledger.data.*
@@ -35,7 +40,13 @@ fun ChartScreen(model: LedgerViewModel, month: YearMonth, all: List<LedgerTransa
     val anchor = remember(savedAnchor, defaultAnchor) { runCatching { LocalDate.parse(savedAnchor) }.getOrNull() ?: defaultAnchor }
     val period = periodFor(anchor, kind)
     val count = when (kind) { PeriodKind.WEEK -> 6; PeriodKind.MONTH -> 7; PeriodKind.YEAR -> 6 }
-    val choices = (count - 1 downTo 0).map { offset -> when (kind) { PeriodKind.WEEK -> defaultAnchor.minusWeeks(offset.toLong()); PeriodKind.MONTH -> defaultAnchor.minusMonths(offset.toLong()); PeriodKind.YEAR -> defaultAnchor.minusYears(offset.toLong()) } }
+    val recent = (count - 1 downTo 0).map { offset -> when (kind) { PeriodKind.WEEK -> defaultAnchor.minusWeeks(offset.toLong()); PeriodKind.MONTH -> defaultAnchor.minusMonths(offset.toLong()); PeriodKind.YEAR -> defaultAnchor.minusYears(offset.toLong()) } }
+    val choices = (recent + anchor).distinctBy { periodFor(it, kind).start }.sorted()
+    val choicesScroll = rememberScrollState()
+    val choiceWidth = with(LocalDensity.current) { 58.dp.toPx() }
+    LaunchedEffect(kind, period.start, choices) {
+        choicesScroll.scrollTo((choices.indexOfFirst { periodFor(it, kind).start == period.start } * choiceWidth).roundToInt())
+    }
     val filtered = all.filter { it.type == type && (category == null || it.categoryId == category.id) && it.occurredOn >= period.start.toString() && it.occurredOn <= period.end.toString() }
     val series = remember(filtered, period) { periodSeries(filtered, period, type) }
     val total = series.sumBig()
@@ -49,14 +60,15 @@ fun ChartScreen(model: LedgerViewModel, month: YearMonth, all: List<LedgerTransa
             }
             Row(Modifier.fillMaxWidth().height(29.dp).border(1.dp, ink), horizontalArrangement = Arrangement.Center) { PeriodKind.entries.forEach { value -> Box(Modifier.weight(1f).fillMaxHeight().background(if (kind == value) ink else yellow).clickable { model.setChart(savedType, value, null) }, contentAlignment = Alignment.Center) { Text(when (value) { PeriodKind.WEEK -> "周"; PeriodKind.MONTH -> "月"; PeriodKind.YEAR -> "年" }, color = if (kind == value) yellow else ink, fontWeight = if (kind == value) FontWeight.Bold else FontWeight.Normal) } } }
         }
-        Row(Modifier.fillMaxWidth().height(39.dp), verticalAlignment = Alignment.CenterVertically) {
-            choices.forEachIndexed { index, choice ->
+        Row(Modifier.fillMaxWidth().height(39.dp).horizontalScroll(choicesScroll), verticalAlignment = Alignment.CenterVertically) {
+            choices.forEach { choice ->
                 val p = periodFor(choice, kind)
-                val label = when (kind) { PeriodKind.WEEK -> if (index == choices.lastIndex) "上周" else "${p.start.get(java.time.temporal.WeekFields.ISO.weekOfWeekBasedYear())}周"; PeriodKind.MONTH -> "${choice.monthValue}月"; PeriodKind.YEAR -> "${choice.year}年" }
-                Column(Modifier.weight(1f).clickable { model.setChart(savedType, kind, choice.toString()) }, horizontalAlignment = Alignment.CenterHorizontally) { Text(label, fontWeight = if (p.start == period.start) FontWeight.Bold else FontWeight.Normal, fontSize = 12.sp); Spacer(Modifier.padding(top = 5.dp).fillMaxWidth(.75f).height(2.dp).background(if (p.start == period.start) ink else Color.Transparent)) }
+                val label = when (kind) { PeriodKind.WEEK -> if (periodFor(choice, kind).start == periodFor(defaultAnchor, kind).start) "上周" else "${p.start.get(java.time.temporal.WeekFields.ISO.weekOfWeekBasedYear())}周"; PeriodKind.MONTH -> "${choice.monthValue}月"; PeriodKind.YEAR -> "${choice.year}年" }
+                Column(Modifier.width(58.dp).clickable { model.setChart(savedType, kind, choice.toString()) }, horizontalAlignment = Alignment.CenterHorizontally) { Text(label, fontWeight = if (p.start == period.start) FontWeight.Bold else FontWeight.Normal, fontSize = 12.sp); Spacer(Modifier.padding(top = 5.dp).fillMaxWidth(.75f).height(2.dp).background(if (p.start == period.start) ink else Color.Transparent)) }
             }
         }
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp)) {
+        LazyColumn(Modifier.weight(1f).padding(horizontal = 18.dp).testTag("chartDetails")) {
+          item { Column {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Column { Text("总${if (type == "EXPENSE") "支出" else "收入"}：${formatAmountMinor(total)}", fontSize = 14.sp, color = Color.Gray); Text("平均值：${formatAverageMinor(total, series.size)}", Modifier.padding(top = 4.dp), fontSize = 14.sp, color = Color.Gray) }
                 Column(horizontalAlignment = Alignment.End) { Text(formatAmountMinor(series.maxOrNull() ?: BigInteger.ZERO), fontSize = 12.sp, color = Color.Gray); if (category != null) Text("${filtered.size} 笔", fontSize = 12.sp) }
@@ -87,8 +99,9 @@ fun ChartScreen(model: LedgerViewModel, month: YearMonth, all: List<LedgerTransa
                 }
                 Text("全部账单", Modifier.padding(top = 24.dp), fontWeight = FontWeight.Bold)
                 if (filtered.isEmpty()) Text("本周期暂无该分类账单", Modifier.padding(24.dp), color = Color.Gray)
-                filtered.forEach { row -> BillRow(row, category, { edit(row) }, { model.run { model.repository.delete(row.id) } }) }
             }
+          } }
+          if (category != null) items(filtered, key = { it.id }) { row -> BillRow(row, category, { edit(row) }, { model.run { model.repository.delete(row.id) } }) }
         }
     }
 }
@@ -97,8 +110,8 @@ fun ChartScreen(model: LedgerViewModel, month: YearMonth, all: List<LedgerTransa
 fun TrendChart(series: List<BigInteger>, period: Period) {
     var selected by remember(series) { mutableIntStateOf(-1) }
     if (selected >= 0) Text("${period.slots()[selected]}  ${formatAmountMinor(series[selected])}", Modifier.fillMaxWidth(), fontSize = 11.sp, color = Color.Gray)
-    Canvas(Modifier.fillMaxWidth().height(124.dp).padding(vertical = 10.dp).pointerInput(series) {
-        detectTapGestures { offset -> if (series.isNotEmpty()) selected = ((offset.x / size.width) * (series.size - 1)).toInt().coerceIn(0, series.lastIndex) }
+    Canvas(Modifier.fillMaxWidth().height(124.dp).padding(vertical = 10.dp).testTag("trendChart").pointerInput(series) {
+        detectTapGestures { offset -> if (series.isNotEmpty()) selected = ((offset.x / size.width) * (series.size - 1)).roundToInt().coerceIn(0, series.lastIndex) }
     }) {
         if (series.isNotEmpty()) {
             val max = (series.maxOrNull() ?: BigInteger.ZERO).max(BigInteger.ONE)
@@ -137,12 +150,13 @@ fun RankingRow(name: String, icon: String, value: BigInteger, total: BigInteger,
 
 @Composable
 fun TagScreen(model: LedgerViewModel, tag: NoteTag, initial: Period?, categories: List<Category>, all: List<LedgerTransaction>, edit: (LedgerTransaction) -> Unit, back: () -> Unit) {
-    var kind by remember { mutableStateOf(initial?.kind ?: PeriodKind.MONTH) }
+    var kind by rememberSaveable { mutableStateOf(initial?.kind ?: PeriodKind.MONTH) }
     val anchor = remember { initial?.start ?: LocalDate.now() }
     val period = periodFor(anchor, kind)
     val records = all.filter { it.categoryId == tag.categoryId && it.noteTagId == tag.id && it.occurredOn >= period.start.toString() && it.occurredOn <= period.end.toString() }
     val total = records.sumMinor()
-    Column(Modifier.fillMaxSize().background(pageGray).verticalScroll(rememberScrollState())) {
+    LazyColumn(Modifier.fillMaxSize().background(pageGray).testTag("tagDetails")) {
+        item { Column {
         Column(Modifier.fillMaxWidth().background(yellow)) {
             Box(Modifier.fillMaxWidth().height(52.dp), contentAlignment = Alignment.Center) { Text("‹", Modifier.align(Alignment.CenterStart).clickable(onClick = back).padding(horizontal = 18.dp), fontSize = 28.sp); Text("备注明细", fontSize = 19.sp) }
             Column(Modifier.fillMaxWidth().padding(bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -158,6 +172,7 @@ fun TagScreen(model: LedgerViewModel, tag: NoteTag, initial: Period?, categories
         Row(Modifier.fillMaxWidth().background(Color.White).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { PeriodKind.entries.forEach { k -> Box(Modifier.weight(1f).background(if (kind == k) ink else pageGray, androidx.compose.foundation.shape.RoundedCornerShape(7.dp)).clickable { kind = k }.padding(9.dp), contentAlignment = Alignment.Center) { Text(when(k) { PeriodKind.WEEK -> "周"; PeriodKind.MONTH -> "月"; PeriodKind.YEAR -> "年" }, color = if (kind == k) yellow else Color.Gray) } } }
         Text("相关账单", Modifier.padding(18.dp), fontWeight = FontWeight.Bold)
         if (records.isEmpty()) Text("当前周期没有使用该标签的账单", Modifier.padding(24.dp), color = Color.Gray)
-        records.forEach { row -> BillRow(row, categories.find { it.id == row.categoryId }, { edit(row) }, { model.run { model.repository.delete(row.id) } }) }
+        } }
+        items(records, key = { it.id }) { row -> BillRow(row, categories.find { it.id == row.categoryId }, { edit(row) }, { model.run { model.repository.delete(row.id) } }) }
     }
 }

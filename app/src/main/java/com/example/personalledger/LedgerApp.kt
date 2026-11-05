@@ -9,6 +9,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.*
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -31,6 +34,7 @@ import kotlinx.coroutines.launch
 val yellow = Color(0xFFFFDA43)
 val ink = Color(0xFF292929)
 val pageGray = Color(0xFFF5F5F5)
+fun navigationColor(selected: Boolean) = if (selected) ink else Color(0xFF888888)
 
 @Composable
 fun AvatarFace(modifier: Modifier = Modifier) {
@@ -45,9 +49,9 @@ fun AvatarFace(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun CatIcon(key: String, outline: Boolean, modifier: Modifier = Modifier) {
+fun CatIcon(key: String, outline: Boolean, modifier: Modifier = Modifier, tint: Color? = null) {
     val id = iconResource(key, outline)
-    if (id != 0) Image(painterResource(id), null, modifier)
+    if (id != 0) Image(painterResource(id), null, modifier, colorFilter = tint?.let { ColorFilter.tint(it) })
 }
 
 @Composable
@@ -57,12 +61,18 @@ fun LedgerApp(model: LedgerViewModel) {
     val tags by model.tags.collectAsState()
     val month by model.month.collectAsState()
     val message by model.message.collectAsState()
-    val stack = remember { mutableStateListOf("home") }
-    var edit by remember { mutableStateOf<LedgerTransaction?>(null) }
-    var selectedCategory by remember { mutableStateOf<Category?>(null) }
-    var selectedTag by remember { mutableStateOf<NoteTag?>(null) }
-    var selectedPeriod by remember { mutableStateOf<Period?>(null) }
-    var managerType by remember { mutableStateOf("EXPENSE") }
+    val stack = rememberSaveable(saver = listSaver<SnapshotStateList<String>, String>(save = { it.toList() }, restore = { it.toMutableStateList() })) { mutableStateListOf("home") }
+    var editId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var categoryId by rememberSaveable { mutableStateOf<String?>(null) }
+    var tagId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var periodStart by rememberSaveable { mutableStateOf<String?>(null) }
+    var periodKind by rememberSaveable { mutableStateOf<String?>(null) }
+    var managerType by rememberSaveable { mutableStateOf("EXPENSE") }
+    val edit = transactions.find { it.id == editId }
+    val selectedCategory = categories.find { it.id == categoryId }
+    val selectedTag = tags.find { it.id == tagId }
+    val selectedPeriod = periodStart?.let { start -> periodKind?.let { periodFor(LocalDate.parse(start), PeriodKind.valueOf(it)) } }
+    val savedStates = rememberSaveableStateHolder()
     fun go(screen: String) { stack.add(screen) }
     fun back() { if (stack.size > 1) stack.removeAt(stack.lastIndex) }
     fun home() { stack.clear(); stack.add("home") }
@@ -71,26 +81,28 @@ fun LedgerApp(model: LedgerViewModel) {
         val screen = stack.last()
         NavDisplay(backStack = stack, onBack = { back() }, modifier = Modifier.weight(1f), entryProvider = { key ->
             NavEntry(key) {
+              savedStates.SaveableStateProvider(key) {
                 when (key) {
-                    "home" -> HomeScreen(model, month, categories, transactions, model::setMonth, { stack.clear(); stack.add("mine") }) { edit = it; go("record") }
-                    "record" -> RecordScreen(model, categories, edit, { if (edit == null) home() else back() }, { home() }, { managerType = it; go("manager") })
+                    "home" -> HomeScreen(model, month, categories, transactions, model::setMonth, { stack.clear(); stack.add("mine") }) { savedStates.removeState("record"); editId = it.id; go("record") }
+                    "record" -> if (editId == null || edit != null) RecordScreen(model, categories, edit, { if (editId == null) home() else back() }, { home() }, { managerType = it; go("manager") })
                     "manager" -> CategoryManager(model, categories, managerType, { back() })
-                    "chart" -> ChartScreen(model, month, transactions, categories, tags, null, { selectedCategory = it; go("category") }, { _, _ -> }, { edit = it; go("record") }, { back() })
-                    "category" -> selectedCategory?.let { category -> ChartScreen(model, month, transactions, categories, tags, categories.find { it.id == category.id } ?: category, {}, { tag, period -> selectedTag = tag; selectedPeriod = period; go("tag") }, { edit = it; go("record") }, { back() }) }
-                    "tag" -> selectedTag?.let { TagScreen(model, it, selectedPeriod, categories, transactions, { edit = it; go("record") }, { back() }) }
+                    "chart" -> ChartScreen(model, month, transactions, categories, tags, null, { categoryId = it.id; go("category") }, { _, _ -> }, { savedStates.removeState("record"); editId = it.id; go("record") }, { back() })
+                    "category" -> selectedCategory?.let { category -> ChartScreen(model, month, transactions, categories, tags, categories.find { it.id == category.id } ?: category, {}, { tag, period -> tagId = tag.id; periodStart = period.start.toString(); periodKind = period.kind.name; go("tag") }, { savedStates.removeState("record"); editId = it.id; go("record") }, { back() }) }
+                    "tag" -> selectedTag?.let { TagScreen(model, it, selectedPeriod, categories, transactions, { savedStates.removeState("record"); editId = it.id; go("record") }, { back() }) }
                     "agent" -> AgentScreen()
                     "mine" -> MineScreen(model, transactions, { managerType = "EXPENSE"; go("manager") })
                 }
+              }
             }
         })
         if (screen in listOf("home", "chart", "agent", "mine")) {
             Row(Modifier.fillMaxWidth().height(64.dp).background(Color.White), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                 listOf("明细" to "home", "图表" to "chart", "＋" to "record", "账伴" to "agent", "我的" to "mine").forEach { (label, target) ->
                     Box(Modifier.weight(1f).fillMaxHeight().clickable {
-                        if (target == "record") { edit = null; go(target) } else { stack.clear(); stack.add(target) }
+                        if (target == "record") { editId = null; savedStates.removeState("record"); go(target) } else { stack.clear(); stack.add(target) }
                     }, contentAlignment = Alignment.Center) {
                         if (target == "record") Box(Modifier.offset(y = (-10).dp).size(66.dp).background(Color.White, CircleShape).padding(5.dp).background(yellow, CircleShape), contentAlignment = Alignment.Center) { Text(label, color = ink, fontSize = 32.sp) }
-                        else Column(horizontalAlignment = Alignment.CenterHorizontally) { CatIcon("nav_$target", false, Modifier.size(22.dp)); Text(label, color = ink, fontSize = 11.sp, fontWeight = if (target == screen) FontWeight.Bold else FontWeight.Normal) }
+                        else Column(horizontalAlignment = Alignment.CenterHorizontally) { val color = navigationColor(target == screen); CatIcon("nav_$target", false, Modifier.size(22.dp), color); Text(label, color = color, fontSize = 11.sp, fontWeight = if (target == screen) FontWeight.Bold else FontWeight.Normal) }
                     }
                 }
             }
