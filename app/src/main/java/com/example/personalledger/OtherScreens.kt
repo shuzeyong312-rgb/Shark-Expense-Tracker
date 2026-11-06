@@ -57,7 +57,7 @@ fun MenuRow(text: String, onClick: () -> Unit) {
     val symbol = when (text) { "分类管理" -> "▦"; "导出账单数据", "数据备份" -> "⇩"; "从备份恢复" -> "⇧"; "数据存储说明" -> "◉"; else -> "ⓘ" }
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 17.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(30.dp).background(Color(0xFFFFF6CE), RoundedCornerShape(9.dp)), contentAlignment = Alignment.Center) { Text(symbol, fontSize = 16.sp) }
-        Text(text, Modifier.weight(1f).padding(start = 13.dp), fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
+        Text(text, Modifier.weight(1f).padding(start = 13.dp))
         Text("›", color = Color.Gray)
     }
 }

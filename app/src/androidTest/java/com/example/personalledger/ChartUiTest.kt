@@ -15,6 +15,17 @@ import java.time.LocalDate
 
 class ChartUiTest {
     @get:Rule val rule = createComposeRule()
+    @Test fun typeMenuShowsSelectionAndSwitchesChart() {
+        var visible by mutableStateOf(true)
+        var selectedType by mutableStateOf("EXPENSE")
+        rule.setContent { ChartTypeOverlay(visible, selectedType, { visible = false }) { selectedType = it; visible = false } }
+        rule.onNodeWithTag("chartTypeEXPENSE").assertIsSelected()
+        rule.onNodeWithTag("chartTypeINCOME").assertIsNotSelected().performClick()
+        rule.runOnIdle { assertEquals("INCOME", selectedType); assertFalse(visible); visible = true }
+        rule.onNodeWithTag("chartTypeINCOME").assertIsSelected()
+        rule.onNodeWithTag("chartTypeScrim").performClick()
+        rule.runOnIdle { assertFalse(visible); assertEquals("INCOME", selectedType) }
+    }
     @Test fun categoryAndNoteDrillDownUseSelectedData() {
         val context = ApplicationProvider.getApplicationContext<Application>()
         val db = Room.inMemoryDatabaseBuilder(context, LedgerDatabase::class.java).build()

@@ -14,6 +14,24 @@ import org.junit.Test
 
 class CategoryUiTest {
     @get:Rule val rule = createComposeRule()
+    @Test fun iconListCanScrollToEndAndSelectLastIcon() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        val model = LedgerViewModel(context, Room.inMemoryDatabaseBuilder(context, LedgerDatabase::class.java).build())
+        rule.setContent { val categories by model.categories.collectAsState(); CategoryManager(model, categories, "EXPENSE") {} }
+        rule.waitUntil(10_000) { rule.onAllNodesWithText("＋添加类别").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithText("＋添加类别").performClick()
+        rule.onNodeWithTag("categoryIcons").performScrollToNode(hasContentDescription("轮船"))
+        val titleTop = rule.onNodeWithText("添加支出类别").getUnclippedBoundsInRoot().top
+        rule.onNodeWithTag("categoryIcons").performTouchInput { down(center); moveBy(Offset(0f, -200f)) }
+        org.junit.Assert.assertEquals(titleTop.value, rule.onNodeWithText("添加支出类别").getUnclippedBoundsInRoot().top.value, 1f)
+        rule.onNodeWithTag("categoryIcons").performTouchInput { up() }
+        rule.onNodeWithTag("categoryIcons").performTouchInput { swipeUp() }
+        rule.onNodeWithContentDescription("轮船").assertIsDisplayed().performClick()
+        rule.onNodeWithText("类别名称（最多4字）").performTextInput("船票")
+        rule.onNodeWithText("完成").performClick()
+        rule.waitUntil(10_000) { model.categories.value.any { it.name == "船票" && it.iconKey == "ship" } }
+    }
+
     @Test fun customCategoryCanBeCreated() {
         val context = ApplicationProvider.getApplicationContext<Application>()
         val model = LedgerViewModel(context, Room.inMemoryDatabaseBuilder(context, LedgerDatabase::class.java).build())

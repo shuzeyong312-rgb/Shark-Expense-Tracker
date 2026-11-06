@@ -11,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -33,11 +34,10 @@ private val donutColors = listOf(Color(0xFFF5CF3B), Color(0xFFEF8A76), Color(0xF
 private data class TagRanking(val id: Long, val amount: BigInteger, val count: Int, val latest: String)
 
 @Composable
-fun ChartScreen(model: LedgerViewModel, month: YearMonth, all: List<LedgerTransaction>, categories: List<Category>, tags: List<NoteTag>, category: Category?, openCategory: (Category) -> Unit, openTag: (NoteTag, Period) -> Unit, edit: (LedgerTransaction) -> Unit, back: () -> Unit) {
+fun ChartScreen(model: LedgerViewModel, month: YearMonth, all: List<LedgerTransaction>, categories: List<Category>, tags: List<NoteTag>, category: Category?, openCategory: (Category) -> Unit, openTag: (NoteTag, Period) -> Unit, edit: (LedgerTransaction) -> Unit, back: () -> Unit, openTypeMenu: () -> Unit = {}) {
     val savedType by model.chartType.collectAsState()
     val kind by model.period.collectAsState()
     val savedAnchor by model.chartAnchor.collectAsState()
-    var menu by remember { mutableStateOf(false) }
     var sortRecent by remember { mutableStateOf(false) }
     val type = category?.type ?: savedType
     val defaultAnchor = when (kind) { PeriodKind.WEEK -> LocalDate.now().minusWeeks(1); PeriodKind.MONTH, PeriodKind.YEAR -> month.atDay(1) }
@@ -70,7 +70,7 @@ fun ChartScreen(model: LedgerViewModel, month: YearMonth, all: List<LedgerTransa
             Box(Modifier.fillMaxWidth().height(47.dp), contentAlignment = Alignment.Center) {
                 if (category != null) Text("‹", Modifier.align(Alignment.CenterStart).clickable(onClick = back).padding(horizontal = 20.dp), fontSize = 28.sp)
                 if (category != null) Text(category.name, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                else Box { Text(if (type == "EXPENSE") "支出 ▾" else "收入 ▾", Modifier.clickable { menu = true }, fontSize = 19.sp, fontWeight = FontWeight.Bold); DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) { listOf("EXPENSE" to "支出", "INCOME" to "收入").forEach { (value, label) -> DropdownMenuItem(text = { Text(label) }, onClick = { model.setChart(value, kind, savedAnchor); menu = false }) } } }
+                else Text(if (type == "EXPENSE") "支出 ▾" else "收入 ▾", Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp)).clickable(onClick = openTypeMenu).padding(horizontal = 10.dp, vertical = 4.dp).testTag("chartTypeSelector"), fontSize = 19.sp, fontWeight = FontWeight.Bold)
             }
             Row(Modifier.fillMaxWidth().height(29.dp).border(1.dp, ink), horizontalArrangement = Arrangement.Center) { PeriodKind.entries.forEach { value -> Box(Modifier.weight(1f).fillMaxHeight().background(if (kind == value) ink else yellow).clickable { model.setChart(savedType, value, null) }, contentAlignment = Alignment.Center) { Text(when (value) { PeriodKind.WEEK -> "周"; PeriodKind.MONTH -> "月"; PeriodKind.YEAR -> "年" }, color = if (kind == value) yellow else ink, fontWeight = if (kind == value) FontWeight.Bold else FontWeight.Normal) } } }
         }

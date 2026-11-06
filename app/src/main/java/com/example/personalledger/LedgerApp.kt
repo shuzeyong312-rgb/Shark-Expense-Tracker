@@ -1,6 +1,12 @@
 package com.example.personalledger
 
 import androidx.compose.foundation.*
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.gestures.*
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.*
@@ -15,14 +21,16 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.*
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.*
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.ui.NavDisplay
@@ -62,6 +70,10 @@ fun LedgerApp(model: LedgerViewModel) {
     val tags by model.tags.collectAsState()
     val month by model.month.collectAsState()
     val message by model.message.collectAsState()
+    val chartType by model.chartType.collectAsState()
+    val chartPeriod by model.period.collectAsState()
+    val chartAnchor by model.chartAnchor.collectAsState()
+    var chartMenu by remember { mutableStateOf(false) }
     val stack = rememberSaveable(saver = listSaver<SnapshotStateList<String>, String>(save = { it.toList() }, restore = { it.toMutableStateList() })) { mutableStateListOf("home") }
     var editId by rememberSaveable { mutableStateOf<Long?>(null) }
     var categoryId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -77,6 +89,7 @@ fun LedgerApp(model: LedgerViewModel) {
     fun go(screen: String) { stack.add(screen) }
     fun back() { if (stack.size > 1) stack.removeAt(stack.lastIndex) }
     fun home() { stack.clear(); stack.add("home") }
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().background(Color.White).navigationBarsPadding()) {
         Spacer(Modifier.fillMaxWidth().background(yellow).statusBarsPadding())
         val screen = stack.last()
@@ -87,7 +100,7 @@ fun LedgerApp(model: LedgerViewModel) {
                     "home" -> HomeScreen(model, month, categories, transactions, model::setMonth, { stack.clear(); stack.add("mine") }) { savedStates.removeState("record"); editId = it.id; go("record") }
                     "record" -> if (editId == null || edit != null) RecordScreen(model, categories, edit, { if (editId == null) home() else back() }, { home() }, { managerType = it; go("manager") })
                     "manager" -> CategoryManager(model, categories, managerType, { back() })
-                    "chart" -> ChartScreen(model, month, transactions, categories, tags, null, { categoryId = it.id; go("category") }, { _, _ -> }, { savedStates.removeState("record"); editId = it.id; go("record") }, { back() })
+                    "chart" -> ChartScreen(model, month, transactions, categories, tags, null, { categoryId = it.id; go("category") }, { _, _ -> }, { savedStates.removeState("record"); editId = it.id; go("record") }, { back() }, { chartMenu = true })
                     "category" -> selectedCategory?.let { category -> ChartScreen(model, month, transactions, categories, tags, categories.find { it.id == category.id } ?: category, {}, { tag, period -> tagId = tag.id; periodStart = period.start.toString(); periodKind = period.kind.name; go("tag") }, { savedStates.removeState("record"); editId = it.id; go("record") }, { back() }) }
                     "tag" -> selectedTag?.let { TagScreen(model, it, selectedPeriod, categories, transactions, { savedStates.removeState("record"); editId = it.id; go("record") }, { back() }) }
                     "agent" -> AgentScreen()
@@ -109,7 +122,31 @@ fun LedgerApp(model: LedgerViewModel) {
             }
         }
     }
+    ChartTypeOverlay(chartMenu, chartType, { chartMenu = false }) { value -> model.setChart(value, chartPeriod, chartAnchor); chartMenu = false }
+    }
     if (message != null) AlertDialog(onDismissRequest = model::clearMessage, title = { Text("提示") }, text = { Text(message.orEmpty()) }, confirmButton = { TextButton(onClick = model::clearMessage) { Text("确定") } })
+}
+
+@Composable
+fun ChartTypeOverlay(visible: Boolean, type: String, dismiss: () -> Unit, select: (String) -> Unit) {
+    BackHandler(enabled = visible, onBack = dismiss)
+    Box(Modifier.fillMaxSize().statusBarsPadding().padding(top = 76.dp).clipToBounds()) {
+        AnimatedVisibility(visible, enter = fadeIn(), exit = fadeOut()) {
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .6f)).clickable(onClick = dismiss).testTag("chartTypeScrim"))
+        }
+        AnimatedVisibility(visible, enter = slideInVertically { -it } + fadeIn(), exit = slideOutVertically { -it } + fadeOut()) {
+            Column(Modifier.fillMaxWidth().background(Color.White).testTag("chartTypePanel")) {
+                listOf("EXPENSE" to "支出", "INCOME" to "收入").forEachIndexed { index, (value, label) ->
+                    Row(Modifier.fillMaxWidth().height(60.dp).semantics { selected = value == type }.clickable { select(value) }.testTag("chartType$value").padding(horizontal = 22.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(30.dp).background(Color(0xFFFFF3BE), CircleShape), contentAlignment = Alignment.Center) { Text(if (value == "EXPENSE") "↑" else "↓", color = ink, fontSize = 20.sp) }
+                        Text(label, Modifier.weight(1f).padding(start = 16.dp), fontSize = 17.sp, color = ink)
+                        if (value == type) Text("✓", color = ink, fontSize = 22.sp)
+                    }
+                    if (index == 0) HorizontalDivider(Modifier.padding(start = 68.dp), color = Color(0xFFEEEEEE))
+                }
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -147,12 +184,12 @@ fun HomeScreen(model: LedgerViewModel, month: YearMonth, categories: List<Catego
         Column(Modifier.fillMaxWidth().background(yellow).padding(horizontal = 20.dp, vertical = 12.dp)) {
         Row(Modifier.fillMaxWidth().padding(bottom = 13.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(35.dp).background(Color(0xFFFFF8D6), CircleShape), contentAlignment = Alignment.Center) { AvatarFace(Modifier.size(15.dp)) }
-            Text("记账", fontFamily = FontFamily.Serif, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+            Text("记账", fontSize = 25.sp, fontWeight = FontWeight.Bold)
             Box(Modifier.size(35.dp).background(Color(0xFFFFF8D6), CircleShape).clickable(onClick = mine), contentAlignment = Alignment.Center) { Text("☰", fontSize = 18.sp) }
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f).clickable { draft = month; picker = true }) { Text("${month.year}年", fontSize = 12.sp); Text("${month.monthValue} 月 ▾", fontSize = 24.sp, fontWeight = FontWeight.Bold) }
-            listOf("收入" to "INCOME", "支出" to "EXPENSE").forEach { (label, type) -> Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) { Text(label, fontSize = 12.sp, color = Color(0xFF7B6A2D), fontFamily = FontFamily.Serif); Text(formatAmountMinor(monthItems.filter { it.type == type }.sumMinor()), fontSize = 20.sp) } }
+            Column(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).clickable { draft = month; picker = true }) { Text("${month.year}年", fontSize = 12.sp); Text("${month.monthValue} 月 ▾", fontSize = 24.sp, fontWeight = FontWeight.Bold) }
+            listOf("收入" to "INCOME", "支出" to "EXPENSE").forEach { (label, type) -> Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) { Text(label, fontSize = 12.sp, color = Color(0xFF7B6A2D)); Text(formatAmountMinor(monthItems.filter { it.type == type }.sumMinor()), fontSize = 20.sp) } }
         }
         }
         Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {

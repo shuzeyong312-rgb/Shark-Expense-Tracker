@@ -8,6 +8,66 @@ import org.junit.Test
 class LedgerUiTest {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
 
+    @Test fun calculatorAndDatePickerKeepDraftOnCancel() {
+        rule.onNodeWithText("＋").performClick()
+        rule.onNodeWithText("餐饮").performClick()
+        rule.onNodeWithTag("dateSelector").assertTextEquals("今天")
+        rule.onNodeWithText("1", useUnmergedTree = true).performClick()
+        rule.onNodeWithText("+", useUnmergedTree = true).performClick()
+        rule.onNodeWithText("2", useUnmergedTree = true).performClick()
+        rule.onNodeWithText("−", useUnmergedTree = true).performClick()
+        rule.onNodeWithText("1", useUnmergedTree = true).performClick()
+        rule.onNodeWithText("¥1+2-1").assertExists()
+        rule.onNodeWithText("完成").assertDoesNotExist()
+        rule.onNodeWithText("=").performClick()
+        rule.onNodeWithText("¥2.00").assertExists()
+        rule.onNodeWithText("完成").assertExists()
+        rule.onNodeWithText("−", useUnmergedTree = true).performClick()
+        rule.onNodeWithText("1", useUnmergedTree = true).performClick()
+        rule.onNodeWithText("=").performClick()
+        rule.onNodeWithText("¥1.00").assertExists()
+        rule.onNodeWithTag("dateSelector").performClick()
+        rule.onNodeWithText("选择日期").assertExists()
+        rule.onAllNodesWithText("取消").onLast().performClick()
+        rule.onNodeWithText("选择日期").assertDoesNotExist()
+        rule.onNodeWithText("¥1.00").assertExists()
+        rule.onNodeWithTag("dateSelector").performClick()
+        rule.onNodeWithText("确定").performClick()
+        rule.onNodeWithTag("dateSelector").assertTextEquals("今天")
+    }
+
+    @Test fun amountKeypadHidesWhileTypingNoteAndReturnsAfterKeyboardCloses() {
+        rule.onNodeWithText("＋").performClick()
+        rule.onNodeWithText("餐饮").performClick()
+        rule.onNodeWithText("完成").assertExists()
+        rule.onNodeWithTag("noteInput").performClick()
+        rule.waitUntil(10_000) { rule.onAllNodesWithText("完成").fetchSemanticsNodes().isEmpty() }
+        rule.onNodeWithTag("noteInput").performTextInput("备注")
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        rule.waitUntil(10_000) { rule.onAllNodesWithText("完成").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithTag("noteInput").assertTextContains("备注")
+    }
+
+    @Test fun savedNotesAppearOnlyWhenNoteInputIsFocused() {
+        val note = "常用测试${System.nanoTime()}"
+        rule.onNodeWithText("＋").performClick()
+        rule.onNodeWithText("餐饮").performClick()
+        rule.onNodeWithText("常用备注 · 输入新备注后自动保存").assertDoesNotExist()
+        rule.onNodeWithText("当前分类暂无常用备注").assertDoesNotExist()
+        rule.onNodeWithText("1", useUnmergedTree = true).performClick()
+        rule.onNodeWithTag("noteInput").performTextInput(note)
+        rule.onNodeWithTag("noteInput").performImeAction()
+        rule.onNodeWithText("完成").performClick()
+        rule.waitUntil(10_000) { rule.onAllNodesWithTag("noteInput").fetchSemanticsNodes().isEmpty() }
+        rule.onNodeWithText("＋").performClick()
+        rule.onNodeWithText("餐饮").performClick()
+        rule.onNodeWithText(note).assertDoesNotExist()
+        rule.onNodeWithTag("noteInput").performClick()
+        rule.waitUntil(10_000) { rule.onAllNodesWithText(note).fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithText(note).performClick()
+        rule.onNodeWithTag("noteInput").assertTextContains(note)
+    }
+
     @Test fun recordFlowSavesAndDeletesBill() {
         val note = "界面测试${System.nanoTime()}"
         rule.onNodeWithText("＋").performClick()

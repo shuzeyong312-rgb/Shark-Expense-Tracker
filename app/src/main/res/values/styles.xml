@@ -1,9 +1,16 @@
 <resources>
     <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:fontFamily">sans</item>
+        <item name="android:fontFamily">@font/lxgw_wenkai</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:statusBarColor">#FFDA43</item>
         <item name="android:navigationBarColor">#000000</item>
         <item name="android:windowActionModeOverlay">true</item>
+    </style>
+    <style name="WheelTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">@font/lxgw_wenkai</item>
+        <item name="android:numberPickerStyle">@style/WheelNumberPicker</item>
+    </style>
+    <style name="WheelNumberPicker" parent="android:style/Widget.Material.Light.NumberPicker">
+        <item name="android:selectionDividerHeight">0dp</item>
     </style>
 </resources>
