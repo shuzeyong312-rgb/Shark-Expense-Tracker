@@ -57,6 +57,7 @@ class LedgerUiTest {
         rule.onNodeWithText("1", useUnmergedTree = true).performClick()
         rule.onNodeWithTag("noteInput").performTextInput(note)
         rule.onNodeWithTag("noteInput").performImeAction()
+        rule.waitUntil(10_000) { rule.onAllNodesWithText("完成").fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithText("完成").performClick()
         rule.waitUntil(10_000) { rule.onAllNodesWithTag("noteInput").fetchSemanticsNodes().isEmpty() }
         rule.onNodeWithText("＋").performClick()
@@ -78,6 +79,7 @@ class LedgerUiTest {
         rule.onNodeWithText("1", useUnmergedTree = true).performClick()
         rule.onNodeWithTag("noteInput").performTextInput(note)
         rule.onNodeWithTag("noteInput").performImeAction()
+        rule.waitUntil(10_000) { rule.onAllNodesWithText("完成").fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithText("完成").performClick()
         rule.waitUntil(10_000) { rule.onAllNodesWithTag("noteInput").fetchSemanticsNodes().isEmpty() && rule.onAllNodesWithText(note).fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithText(note).performTouchInput { longClick() }
@@ -97,6 +99,7 @@ class LedgerUiTest {
         rule.onNodeWithText("1", useUnmergedTree = true).performClick()
         rule.onNodeWithTag("noteInput").performTextInput("草稿")
         rule.onNodeWithTag("noteInput").performImeAction()
+        rule.waitUntil(10_000) { rule.onAllNodesWithText("完成").fetchSemanticsNodes().isNotEmpty() }
         rule.onAllNodesWithText("餐饮").onLast().performClick()
         rule.onNodeWithText("日用").performClick()
         rule.onNodeWithTag("noteInput").assertTextContains("草稿")
@@ -108,6 +111,7 @@ class LedgerUiTest {
         rule.onNodeWithText("1", useUnmergedTree = true).performClick()
         rule.onNodeWithTag("noteInput").performTextInput("旋转草稿")
         rule.onNodeWithTag("noteInput").performImeAction()
+        rule.waitUntil(10_000) { rule.onAllNodesWithText("完成").fetchSemanticsNodes().isNotEmpty() }
         rule.activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         rule.waitUntil(10_000) { rule.activity.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE }
         rule.waitUntil(10_000) { rule.onAllNodesWithTag("noteInput").fetchSemanticsNodes().isNotEmpty() }
@@ -123,11 +127,13 @@ class LedgerUiTest {
         rule.onNodeWithText("1", useUnmergedTree = true).performClick()
         rule.onNodeWithTag("noteInput").performTextInput(note)
         rule.onNodeWithTag("noteInput").performImeAction()
+        rule.waitUntil(10_000) { rule.onAllNodesWithText("完成").fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithText("完成").performClick()
         rule.waitUntil(10_000) { rule.onAllNodesWithText(note).fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithText(note).performClick()
         rule.onNodeWithTag("noteInput").performTextInput("修改")
         rule.onNodeWithTag("noteInput").performImeAction()
+        rule.waitUntil(10_000) { rule.onAllNodesWithText("完成").fetchSemanticsNodes().isNotEmpty() }
         rule.activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         rule.waitUntil(10_000) { rule.activity.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE }
         rule.waitUntil(10_000) { rule.onAllNodesWithTag("noteInput").fetchSemanticsNodes().isNotEmpty() }

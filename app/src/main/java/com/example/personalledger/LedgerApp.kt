@@ -2,11 +2,9 @@ package com.example.personalledger
 
 import androidx.compose.foundation.*
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.*
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.*
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.*
@@ -86,23 +84,42 @@ fun LedgerApp(model: LedgerViewModel) {
     val selectedTag = tags.find { it.id == tagId }
     val selectedPeriod = periodStart?.let { start -> periodKind?.let { periodFor(LocalDate.parse(start), PeriodKind.valueOf(it)) } }
     val savedStates = rememberSaveableStateHolder()
-    fun go(screen: String) { stack.add(screen) }
-    fun back() { if (stack.size > 1) stack.removeAt(stack.lastIndex) }
+    fun go(screen: String) { if (stack.last() != screen) stack.add(screen) }
+    fun back(from: String = stack.last()) { if (stack.size > 1 && stack.last() == from) stack.removeAt(stack.lastIndex) }
     fun home() { stack.clear(); stack.add("home") }
     Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().background(Color.White).navigationBarsPadding()) {
         Spacer(Modifier.fillMaxWidth().background(yellow).statusBarsPadding())
         val screen = stack.last()
-        NavDisplay(backStack = stack, onBack = { back() }, modifier = Modifier.weight(1f), entryProvider = { key ->
-            NavEntry(key) {
+        NavDisplay(backStack = stack, onBack = { back() }, modifier = Modifier.weight(1f),
+            transitionSpec = {
+                val tabSwitch = initialState.entries.last().metadata["topLevel"] == true &&
+                    targetState.entries.last().metadata["topLevel"] == true
+                val enter = fadeIn(tween(240, easing = FastOutSlowInEasing))
+                (if (tabSwitch) enter else enter + slideInHorizontally(tween(240, easing = FastOutSlowInEasing)) { it / 12 }) togetherWith
+                    fadeOut(tween(240, easing = FastOutSlowInEasing))
+            },
+            popTransitionSpec = {
+                fadeIn(tween(240, easing = FastOutSlowInEasing)) togetherWith
+                    (fadeOut(tween(240, easing = FastOutSlowInEasing)) + slideOutHorizontally(tween(240, easing = FastOutSlowInEasing)) { it / 12 })
+            },
+            predictivePopTransitionSpec = {
+                fadeIn(tween(240, easing = FastOutSlowInEasing)) togetherWith
+                    (fadeOut(tween(240, easing = FastOutSlowInEasing)) + slideOutHorizontally(tween(240, easing = FastOutSlowInEasing)) { it / 12 })
+            }, entryProvider = { key ->
+            NavEntry(key, metadata = mapOf("topLevel" to (key in setOf("home", "chart", "agent", "mine")))) {
               savedStates.SaveableStateProvider(key) {
                 when (key) {
                     "home" -> HomeScreen(model, month, categories, transactions, model::setMonth, { stack.clear(); stack.add("mine") }) { savedStates.removeState("record"); editId = it.id; go("record") }
-                    "record" -> if (editId == null || edit != null) RecordScreen(model, categories, edit, { if (editId == null) home() else back() }, { home() }, { managerType = it; go("manager") })
-                    "manager" -> CategoryManager(model, categories, managerType, { back() })
-                    "chart" -> ChartScreen(model, month, transactions, categories, tags, null, { categoryId = it.id; go("category") }, { _, _ -> }, { savedStates.removeState("record"); editId = it.id; go("record") }, { back() }, { chartMenu = true })
-                    "category" -> selectedCategory?.let { category -> ChartScreen(model, month, transactions, categories, tags, categories.find { it.id == category.id } ?: category, {}, { tag, period -> tagId = tag.id; periodStart = period.start.toString(); periodKind = period.kind.name; go("tag") }, { savedStates.removeState("record"); editId = it.id; go("record") }, { back() }) }
-                    "tag" -> selectedTag?.let { TagScreen(model, it, selectedPeriod, categories, transactions, { savedStates.removeState("record"); editId = it.id; go("record") }, { back() }) }
+                    "record" -> {
+                        var retainedEdit by remember(editId) { mutableStateOf(edit) }
+                        LaunchedEffect(edit) { if (edit != null) retainedEdit = edit }
+                        if (editId == null || retainedEdit != null) RecordScreen(model, categories, retainedEdit, { if (editId == null) home() else back(key) }, { home() }, { managerType = it; go("manager") })
+                    }
+                    "manager" -> CategoryManager(model, categories, managerType, { back(key) })
+                    "chart" -> ChartScreen(model, month, transactions, categories, tags, null, { categoryId = it.id; go("category") }, { _, _ -> }, { savedStates.removeState("record"); editId = it.id; go("record") }, { back(key) }, { chartMenu = true })
+                    "category" -> selectedCategory?.let { category -> ChartScreen(model, month, transactions, categories, tags, categories.find { it.id == category.id } ?: category, {}, { tag, period -> tagId = tag.id; periodStart = period.start.toString(); periodKind = period.kind.name; go("tag") }, { savedStates.removeState("record"); editId = it.id; go("record") }, { back(key) }) }
+                    "tag" -> selectedTag?.let { TagScreen(model, it, selectedPeriod, categories, transactions, { savedStates.removeState("record"); editId = it.id; go("record") }, { back(key) }) }
                     "agent" -> AgentScreen()
                     "mine" -> MineScreen(model, transactions, { managerType = "EXPENSE"; go("manager") })
                 }
@@ -154,6 +171,8 @@ fun ChartTypeOverlay(visible: Boolean, type: String, dismiss: () -> Unit, select
 fun HomeScreen(model: LedgerViewModel, month: YearMonth, categories: List<Category>, all: List<LedgerTransaction>, setMonth: (YearMonth) -> Unit, mine: () -> Unit, edit: (LedgerTransaction) -> Unit) {
     var picker by remember { mutableStateOf(false) }
     var draft by remember(month) { mutableStateOf(month) }
+    val sheetState = rememberModalBottomSheetState()
+    val sheetExit = rememberSheetExit(sheetState)
     val listState = rememberLazyListState()
     val monthItems = remember(month, all) { all.filter { it.occurredOn.startsWith(month.toString()) } }
     val grouped = remember(monthItems) { monthItems.groupBy { it.occurredOn } }
@@ -208,11 +227,11 @@ fun HomeScreen(model: LedgerViewModel, month: YearMonth, categories: List<Catego
         }
         }
     }
-    if (picker) ModalBottomSheet(onDismissRequest = { picker = false }, containerColor = Color.White) {
+    if (picker) ModalBottomSheet(onDismissRequest = { sheetExit.close { picker = false } }, sheetState = sheetState, containerColor = Color.White) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(onClick = { picker = false }) { Text("取消") }
+            TextButton(onClick = { sheetExit.close { picker = false } }) { Text("取消") }
             Text("选择月份", Modifier.padding(top = 12.dp), fontWeight = FontWeight.Bold)
-            TextButton(onClick = { setMonth(draft); picker = false }) { Text("确定") }
+            TextButton(onClick = { val selected = draft; sheetExit.close { setMonth(selected); picker = false } }) { Text("确定") }
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 40.dp)) {
             WheelPicker(9999, draft.year - 1, { "${it + 1} 年" }, Modifier.weight(1f)) { draft = draft.withYear(it + 1) }

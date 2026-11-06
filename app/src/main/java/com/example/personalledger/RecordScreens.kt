@@ -48,17 +48,18 @@ fun RecordScreen(model: LedgerViewModel, categories: List<Category>, initial: Le
     val date = LocalDate.parse(dateText)
     var confirmDelete by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetExit = rememberSheetExit(sheetState)
+    fun closePanel(after: () -> Unit = {}) { sheetExit.close { showPanel = false; after() } }
     val category = categories.find { it.id == categoryId }
     val quick by remember(categoryId) { categoryId?.let { model.repository.quickTags(it) } ?: kotlinx.coroutines.flow.flowOf(emptyList()) }.collectAsState(initial = emptyList())
     var showDatePicker by remember { mutableStateOf(false) }
-    val focusManager = LocalFocusManager.current
-    val keyboard = LocalSoftwareKeyboardController.current
-    Column(Modifier.fillMaxSize().background(Color.White)) {
+    Column(Modifier.fillMaxSize().background(Color.White).testTag("recordPage")) {
         Box(Modifier.fillMaxWidth().height(86.dp).background(yellow), contentAlignment = Alignment.Center) {
             Row(horizontalArrangement = Arrangement.spacedBy(36.dp)) {
-                listOf("EXPENSE" to "支出", "INCOME" to "收入").forEach { (value, label) -> Column(Modifier.clickable { type = value; showPanel = false }.padding(horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) { Text(label, color = ink, fontSize = 20.sp, fontWeight = if (type == value) FontWeight.Bold else FontWeight.Normal); Spacer(Modifier.padding(top = 8.dp).width(60.dp).height(3.dp).background(if (type == value) ink else Color.Transparent)) } }
+                listOf("EXPENSE" to "支出", "INCOME" to "收入").forEach { (value, label) -> Column(Modifier.clickable { if (showPanel) closePanel { type = value } else type = value }.padding(horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) { Text(label, color = ink, fontSize = 20.sp, fontWeight = if (type == value) FontWeight.Bold else FontWeight.Normal); Spacer(Modifier.padding(top = 8.dp).width(60.dp).height(3.dp).background(if (type == value) ink else Color.Transparent)) } }
             }
-            Text("取消", Modifier.align(Alignment.CenterEnd).clickable(onClick = back).padding(18.dp), color = ink)
+            Text("取消", Modifier.align(Alignment.CenterEnd).clickable { if (showPanel) closePanel(back) else back() }.padding(18.dp), color = ink)
         }
         val visible = categories.filter { it.type == type && it.isVisible }
         LazyVerticalGrid(columns = GridCells.Fixed(4), modifier = Modifier.weight(1f), contentPadding = PaddingValues(16.dp)) {
@@ -72,7 +73,9 @@ fun RecordScreen(model: LedgerViewModel, categories: List<Category>, initial: Le
             item { Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable { manage(type) }.padding(vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) { Box(Modifier.size(52.dp).background(Color(0xFFF3F3F3), CircleShape), contentAlignment = Alignment.Center) { CatIcon("settings", true, Modifier.size(27.dp)) }; Text("设置", Modifier.padding(top = 7.dp), fontSize = 13.sp) } }
         }
     }
-    if (showPanel && category != null) ModalBottomSheet(onDismissRequest = { showPanel = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = Color.White, dragHandle = null) {
+    if (showPanel && category != null) ModalBottomSheet(onDismissRequest = { if (!saving) closePanel() }, sheetState = sheetState, containerColor = Color.White, dragHandle = null) {
+        val focusManager = LocalFocusManager.current
+        val keyboard = LocalSoftwareKeyboardController.current
         var noteFocused by remember { mutableStateOf(false) }
         val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
         var keyboardWasVisible by remember { mutableStateOf(false) }
@@ -82,11 +85,11 @@ fun RecordScreen(model: LedgerViewModel, categories: List<Category>, initial: Le
         }
         Column(Modifier.fillMaxWidth().imePadding().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
             Row(Modifier.fillMaxWidth().height(58.dp), verticalAlignment = Alignment.CenterVertically) {
-                Row(Modifier.clickable { showPanel = false }.weight(1f), verticalAlignment = Alignment.CenterVertically) { CatIcon(category.iconKey, true, Modifier.size(24.dp)); Spacer(Modifier.width(8.dp)); Text(category.name, fontSize = 13.sp) }
+                Row(Modifier.clickable { if (!saving) closePanel() }.weight(1f), verticalAlignment = Alignment.CenterVertically) { CatIcon(category.iconKey, true, Modifier.size(24.dp)); Spacer(Modifier.width(8.dp)); Text(category.name, fontSize = 13.sp) }
                 Text(if (initial == null) "记一笔" else "编辑账单", fontSize = 19.sp)
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End) {
                     if (initial != null) Text("删除", Modifier.clickable { confirmDelete = true }.padding(6.dp), color = Color.Red, fontSize = 13.sp)
-                    Text("取消", Modifier.clickable { if (initial == null) showPanel = false else back() }.padding(6.dp), color = Color.Gray, fontSize = 13.sp)
+                    Text("取消", Modifier.clickable { if (!saving) closePanel { if (initial != null) back() } }.padding(6.dp), color = Color.Gray, fontSize = 13.sp)
                 }
             }
             Text("¥${amount.ifEmpty { "0.00" }}", Modifier.align(Alignment.End).padding(vertical = 10.dp), fontSize = 36.sp, fontWeight = FontWeight.Light)
@@ -107,7 +110,7 @@ fun RecordScreen(model: LedgerViewModel, categories: List<Category>, initial: Le
             }
             if (noteFocused && quick.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()).padding(bottom = 8.dp)) { quick.forEach { tag -> Text(tag.displayName, Modifier.padding(end = 8.dp).background(pageGray, RoundedCornerShape(6.dp)).clickable { note = tag.displayName }.padding(horizontal = 12.dp, vertical = 7.dp), fontSize = 12.sp) } }
             @Composable fun Key(key: String, modifier: Modifier) {
-                Box(modifier.height(53.dp).border(0.5.dp, pageGray).background(if (key == "完成" || key == "=") yellow else Color.White).clickable(enabled = !saving) {
+                Box(modifier.height(53.dp).border(0.5.dp, pageGray).background(if (key == "完成" || key == "=") yellow else Color.White).clickable(enabled = !saving && !sheetExit.closing) {
                     when (key) {
                         "⌫" -> amount = amount.dropLast(1)
                         "=" -> {
@@ -123,7 +126,7 @@ fun RecordScreen(model: LedgerViewModel, categories: List<Category>, initial: Le
                                 try { model.updateMonth(java.time.YearMonth.from(date)) }
                                 catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
                                 catch (_: Exception) { model.showMessage("账单已保存，但未能切换月份，请手动选择。") }
-                                done()
+                                closePanel(done)
                             } finally { saving = false } } }
                         }
                         "+", "−" -> if (amount.isNotEmpty() && amount.last().isDigit()) amount += if (key == "−") "-" else "+"
@@ -143,19 +146,22 @@ fun RecordScreen(model: LedgerViewModel, categories: List<Category>, initial: Le
         }
     }
     if (showDatePicker) DateWheelSheet(date, onDismiss = { showDatePicker = false }, onConfirm = { dateText = it.toString(); showDatePicker = false })
-    if (confirmDelete && initial != null) AlertDialog(onDismissRequest = { confirmDelete = false }, title = { Text("删除账单？") }, text = { Text("删除后无法恢复。") }, confirmButton = { TextButton(onClick = { confirmDelete = false; model.run { model.repository.delete(initial.id); done() } }) { Text("删除") } }, dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("取消") } })
+    if (confirmDelete && initial != null) AlertDialog(onDismissRequest = { confirmDelete = false }, title = { Text("删除账单？") }, text = { Text("删除后无法恢复。") }, confirmButton = { TextButton(onClick = { confirmDelete = false; model.run { model.repository.delete(initial.id); closePanel(done) } }) { Text("删除") } }, dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("取消") } })
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DateWheelSheet(date: LocalDate, onDismiss: () -> Unit, onConfirm: (LocalDate) -> Unit) {
-    var selected by remember { mutableStateOf(date) }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = Color.White, dragHandle = null) {
+    var selectedText by rememberSaveable { mutableStateOf(date.toString()) }
+    val selected = LocalDate.parse(selectedText)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetExit = rememberSheetExit(sheetState)
+    ModalBottomSheet(onDismissRequest = { sheetExit.close(onDismiss) }, sheetState = sheetState, containerColor = Color.White, dragHandle = null) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
             Box(Modifier.fillMaxWidth().height(56.dp), contentAlignment = Alignment.Center) {
-                Text("取消", Modifier.align(Alignment.CenterStart).clickable(onClick = onDismiss).padding(16.dp))
+                Text("取消", Modifier.align(Alignment.CenterStart).clickable { sheetExit.close(onDismiss) }.padding(16.dp))
                 Text("选择日期", fontSize = 18.sp)
-                Text("确定", Modifier.align(Alignment.CenterEnd).clickable { onConfirm(selected) }.padding(16.dp))
+                Text("确定", Modifier.align(Alignment.CenterEnd).clickable { sheetExit.close { onConfirm(selected) } }.padding(16.dp))
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 12.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                 @Composable fun Wheel(label: String, min: Int, max: Int, value: Int, change: (Int) -> Unit) {
@@ -172,9 +178,9 @@ private fun DateWheelSheet(date: LocalDate, onDismiss: () -> Unit, onConfirm: (L
                         }
                     }
                 }
-                Wheel("年", 1, maxOf(9999, selected.year), selected.year) { selected = selected.withYear(it) }
-                Wheel("月", 1, 12, selected.monthValue) { selected = selected.withMonth(it) }
-                Wheel("日", 1, selected.lengthOfMonth(), selected.dayOfMonth) { selected = selected.withDayOfMonth(it) }
+                Wheel("年", 1, maxOf(9999, selected.year), selected.year) { selectedText = selected.withYear(it).toString() }
+                Wheel("月", 1, 12, selected.monthValue) { selectedText = selected.withMonth(it).toString() }
+                Wheel("日", 1, selected.lengthOfMonth(), selected.dayOfMonth) { selectedText = selected.withDayOfMonth(it).toString() }
             }
         }
     }
@@ -188,6 +194,9 @@ fun CategoryManager(model: LedgerViewModel, categories: List<Category>, initialT
     var editor by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
     var icon by remember { mutableStateOf("gamepad") }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetExit = rememberSheetExit(sheetState)
+    var saving by remember { mutableStateOf(false) }
     val items = categories.filter { it.type == type }.sortedWith(compareBy({ it.sortOrder }, { it.id }))
     Column(Modifier.fillMaxSize().background(Color.White)) {
         Column(Modifier.fillMaxWidth().background(yellow)) {
@@ -220,11 +229,11 @@ fun CategoryManager(model: LedgerViewModel, categories: List<Category>, initialT
         }
         Box(Modifier.fillMaxWidth().height(64.dp).background(Color.White).clickable { editing = null; name = ""; icon = "gamepad"; editor = true }, contentAlignment = Alignment.Center) { Text("＋添加类别") }
     }
-    if (editor) ModalBottomSheet(onDismissRequest = { editor = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), sheetGesturesEnabled = false, containerColor = Color.White, dragHandle = null) {
+    if (editor) ModalBottomSheet(onDismissRequest = { if (!saving) sheetExit.close { editor = false } }, sheetState = sheetState, sheetGesturesEnabled = false, containerColor = Color.White, dragHandle = null) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(.9f).imePadding().padding(horizontal = 16.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { editor = false }) { Text("取消", color = ink) }; Text("${if (editing == null) "添加" else "编辑"}${if (type == "EXPENSE") "支出" else "收入"}类别", fontWeight = FontWeight.Bold)
-                TextButton(enabled = name.isNotBlank(), onClick = { model.run { model.repository.saveCategory(editing?.id, type, name, icon); editor = false } }) { Text("完成", color = if (name.isNotBlank()) ink else Color.LightGray) }
+                TextButton(enabled = !saving && !sheetExit.closing, onClick = { sheetExit.close { editor = false } }) { Text("取消", color = ink) }; Text("${if (editing == null) "添加" else "编辑"}${if (type == "EXPENSE") "支出" else "收入"}类别", fontWeight = FontWeight.Bold)
+                TextButton(enabled = name.isNotBlank() && !saving && !sheetExit.closing, onClick = { saving = true; model.run { try { model.repository.saveCategory(editing?.id, type, name, icon); sheetExit.close { editor = false } } finally { saving = false } } }) { Text("完成", color = if (name.isNotBlank()) ink else Color.LightGray) }
             }
             Box(Modifier.align(Alignment.CenterHorizontally).padding(vertical = 22.dp).size(76.dp).background(yellow, CircleShape), contentAlignment = Alignment.Center) { CatIcon(icon, true, Modifier.size(34.dp)) }
             BasicTextField(name, { if (it.codePointCount(0, it.length) <= 4) name = it }, modifier = Modifier.fillMaxWidth().background(pageGray, RoundedCornerShape(7.dp)).padding(16.dp), textStyle = MaterialTheme.typography.bodyLarge, singleLine = true, decorationBox = { inner -> Box { if (name.isEmpty()) Text("类别名称（最多4字）", color = Color.Gray); inner() } })
